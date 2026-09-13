@@ -67,7 +67,7 @@ actor:
     lr_warmup_steps: 20
     lr_scheduler: "cosine"
     num_cycles: 0.5
-    min_lr_ratio: 0.1
+    min_lr: 2.5e-6
 
   fsdp_config:
     strategy: "fsdp"
