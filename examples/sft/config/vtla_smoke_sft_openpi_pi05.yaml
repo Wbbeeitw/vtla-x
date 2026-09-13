@@ -40,10 +40,9 @@ actor:
   seed: 0
 
   model:
-    # pi05_libero_base snapshot copied to writable storage;
-    # assets/<repo_id>/norm_stats.json is generated into this dir by
-    # toolkits/lerobot/calculate_norm_stats.py before the smoke run.
-    model_path: "/data_vtlax/checkpoints/pi05_libero_base"
+    # Zero-copy: point directly at the pi05_libero_base snapshot in the
+    # read-only mount. HF-cache relative symlinks resolve within the mount.
+    model_path: "/data_vtla/hf/hub/models--lerobot--pi05_libero_base/snapshots/a217bfd3b14673cf2ce597e69997ab21866438dd"
     num_action_chunks: 10
     action_dim: 7
     add_value_head: False
@@ -53,8 +52,10 @@ actor:
       train_expert_only: True
 
     openpi_data:
-      # Used as OpenPI's norm-stats asset id.
-      repo_id: "lerobot_libero"
+      # Explicit norm-stats file (bypasses assets_dir convention).
+      # Generated BEFORE launch by toolkits/lerobot/calculate_norm_stats.py.
+      # Convention: <assets_root>/<asset_id>/norm_stats.json
+      norm_stats_path: "/data_vtlax/norm_stats/lerobot_libero/norm_stats.json"
 
   optim:
     lr: 2.5e-5
