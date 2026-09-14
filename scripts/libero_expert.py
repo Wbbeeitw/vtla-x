@@ -28,7 +28,7 @@ class ExpertConfig:
     close_steps: int = 15
     release_steps: int = 10
     state_timeout: int = 80
-    z_comp_max: float = 0.08     # max gravity-sag compensation along z
+    comp_max: float = 0.15       # max 3-dim sag/load compensation (norm)
     slow_factor: float = 0.5      # speed scale during rack descent
 
 
@@ -43,7 +43,7 @@ class WineRackExpert:
         self.bottle_id = m.body_name2id("wine_bottle_1_main")
         self.rack_id = m.site_name2id("wine_rack_1_top_region")
         self.eef_id = m.body_name2id("gripper0_eef")
-        self.z_comp = 0.0  # eef BODY (controller frame origin); pos via body_xpos
+        self.comp = np.zeros(3)  # eef BODY (controller frame origin); pos via body_xpos
         self.t0 = time.time()
 
     # ---- ground truth -------------------------------------------------
@@ -129,8 +129,7 @@ class WineRackExpert:
                 target = self._eef_pos(sim) + np.array([0, 0, 0.10])
                 gripper = 1.0
 
-            target = target.copy()
-            target[2] -= self.z_comp
+            target = target.copy() + self.comp
             action = self._servo_action(sim, target, gripper,
                                         scale=cfg.slow_factor if state == "place" else 1.0)
             obs, _, _, _ = env.step(action)
@@ -158,12 +157,13 @@ class WineRackExpert:
                 return True, frames
             if t_in_state >= cfg.state_timeout:
                 cur = self._eef_pos(sim)
-                sag = cur[2] - target[2]
-                if sag > 0.005 and self.z_comp < cfg.z_comp_max:
-                    self.z_comp = min(self.z_comp + sag, cfg.z_comp_max)
+                shortfall = target - cur
+                if np.linalg.norm(shortfall) > 0.01 and np.linalg.norm(self.comp) < cfg.comp_max:
+                    self.comp = self.comp + shortfall * 0.8
+                    if np.linalg.norm(self.comp) > cfg.comp_max:
+                        self.comp = self.comp / np.linalg.norm(self.comp) * cfg.comp_max
                     t_in_state = 0
-                    print(f"  [z_comp -> {self.z_comp:.3f}] state={state} "
-                          f"dist={np.linalg.norm(cur - target):.3f}", flush=True)
+                    print(f"  [comp {np.round(self.comp,3)}] state={state}", flush=True)
                 else:
                     print(f"  [timeout {state}] eef={np.round(cur,3)} target="
                           f"{np.round(target,3)} dist={np.linalg.norm(cur - target):.3f} "
