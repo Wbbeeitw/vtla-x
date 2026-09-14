@@ -59,7 +59,7 @@ actor:
       # Explicit norm-stats file (bypasses assets_dir convention).
       # Generated BEFORE launch by toolkits/lerobot/calculate_norm_stats.py.
       # Convention: <assets_root>/<asset_id>/norm_stats.json
-      norm_stats_path: "/data_vtlax/norm_stats/lerobot_libero/norm_stats.json"
+      norm_stats_path: "/home/enine/rlinf_workspace/models/RLinf-Pi05-LIBERO-SFT/physical-intelligence/libero/norm_stats.json"
 
   optim:
     lr: 2.5e-5
