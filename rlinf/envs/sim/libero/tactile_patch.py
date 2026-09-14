@@ -83,19 +83,22 @@ def apply_touch_patch(xml_path: Path | None = None) -> Path:
 
 
 class TactileReader:
-    """Resolve sensor addresses once, then read cheap per step."""
+    """Resolve sensor addresses once, then read cheap per step.
+    Prefix-tolerant: robosuite prepends robot prefixes (gripper0_...) to
+    sensor names at model composition."""
 
     def __init__(self, sim):
+        all_names = [str(n) for n in sim.model.sensor_names]
+
+        def adr_of(name: str) -> int:
+            for j, actual in enumerate(all_names):
+                if actual == name or actual.endswith(name):
+                    return sim.model.sensor_adr[j]
+            raise ValueError(f"touch sensor '{name}' not in model")
+
         names = [f"touch_f{f}_s{i:02d}" for f in (0, 1) for i in range(N_SITES_PER_FINGER)]
-        self.tactile_adr = []
-        for n in names:
-            sid = sim.model.sensor_name2id(n)
-            self.tactile_adr.append(sim.model.sensor_adr[sid])
-        self.tactile_adr = np.asarray(self.tactile_adr)
-        self.ft_adr = [
-            sim.model.sensor_adr[sim.model.sensor_name2id("force_ee")],
-            sim.model.sensor_adr[sim.model.sensor_name2id("torque_ee")],
-        ]
+        self.tactile_adr = np.asarray([adr_of(n) for n in names])
+        self.ft_adr = [adr_of("force_ee"), adr_of("torque_ee")]
 
     def tactile(self, sim) -> np.ndarray:
         return sim.data.sensordata[self.tactile_adr].astype(np.float32)

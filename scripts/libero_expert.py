@@ -38,8 +38,8 @@ class WineRackExpert:
         sim = env.sim
         m = sim.model
         self.bottle_id = m.body_name2id("wine_bottle_1_main")
-        self.rack_id = m.body_name2id("wine_rack_1_main")
-        self.eef_id = m.site_name2id("grip_site")
+        self.rack_id = m.site_name2id("wine_rack_1_top_region")
+        self.eef_id = m.site_name2id("gripper0_grip_site")
         self.t0 = time.time()
 
     # ---- ground truth -------------------------------------------------
@@ -47,7 +47,7 @@ class WineRackExpert:
         return sim.data.body_xpos[self.bottle_id].copy()
 
     def _rack_pos(self, sim):
-        return sim.data.body_xpos[self.rack_id].copy()
+        return sim.data.site_xpos[self.rack_id].copy()
 
     def _eef_pos(self, sim):
         return sim.data.site_xpos[self.eef_id].copy()
