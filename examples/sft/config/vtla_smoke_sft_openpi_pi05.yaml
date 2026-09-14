@@ -29,8 +29,10 @@ runner:
   save_interval: 100
 
 data:
-  # LIBERO LeRobot dataset (read-only mount from /data/VTLA)
-  train_data_paths: "/data_vtla/data/lerobot_libero"
+  # Clean repo name resolved under HF_LEROBOT_HOME (= /data_vtlax/datasets,
+  # where our writable LIBERO copy lives). Absolute paths break lerobot's
+  # hub-repo-id validation.
+  train_data_paths: "lerobot_libero"
 
 actor:
   group_name: "ActorGroup"
