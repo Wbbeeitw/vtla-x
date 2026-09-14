@@ -32,7 +32,7 @@ data:
   # openpi's built-in FakeDataset ("fake" repo_id): generates samples from
   # the model config — pure pipeline validation, zero data dependency.
   # Real runs replace this with our own collected dataset (v2.1 format).
-  train_data_paths: "fake"
+  train_data_paths: "smoke_libero_pi"
 
 actor:
   group_name: "ActorGroup"
