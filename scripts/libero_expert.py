@@ -34,6 +34,7 @@ class ExpertConfig:
     state_timeout: int = 80
     comp_max: float = 0.15        # max 3-dim sag/load compensation (norm)
     place_steps: int = 150        # bounded descent before unconditional release
+    slow_factor: float = 0.5      # speed scale during rack descent
 
 
 class WineRackExpert:
