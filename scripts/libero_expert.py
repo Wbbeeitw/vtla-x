@@ -39,7 +39,7 @@ class WineRackExpert:
         m = sim.model
         self.bottle_id = m.body_name2id("wine_bottle_1_main")
         self.rack_id = m.site_name2id("wine_rack_1_top_region")
-        self.eef_id = m.site_name2id("gripper0_grip_site")
+        self.eef_id = m.site_name2id("gripper0_eef")  # controller frame (OSC targets this)
         self.t0 = time.time()
 
     # ---- ground truth -------------------------------------------------
@@ -151,6 +151,9 @@ class WineRackExpert:
             if check():
                 return True, frames
             if t_in_state >= cfg.state_timeout:
+                cur = self._eef_pos(sim)
+                print(f"  [timeout {state}] eef={np.round(cur,3)} dist="
+                      f"{np.linalg.norm(cur - target):.3f}", flush=True)
                 return False, frames
 
         return False, frames

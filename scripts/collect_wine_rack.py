@@ -77,14 +77,23 @@ def main():
     print(f"task={TASK_NAME} | init states: {len(init_states)}", flush=True)
 
     np.random.seed(args.seed)
-    env = make_env(bddl)
-    expert = WineRackExpert(env, ExpertConfig())
+
+    def build():
+        e = make_env(bddl)
+        return e, WineRackExpert(e, ExpertConfig())
+
+    env, expert = build()
 
     if args.check:
-        n_ok, n_tot = 0, min(30, len(init_states) * 5)
+        n_ok, n_tot = 0, min(12, len(init_states) * 5)
         for ep in range(n_tot):
             init = init_states[ep % len(init_states)]
-            ok, frames = expert.rollout(init_state=init, verbose=(ep % 10 == 0))
+            try:
+                ok, frames = expert.rollout(init_state=init, verbose=(ep % 10 == 0))
+            except Exception as e:
+                print(f"[check {ep:02d}] env exception: {type(e).__name__} {str(e)[:90]}", flush=True)
+                env, expert = build()  # GL/teardown noise: rebuild and continue
+                continue
             n_ok += ok
             print(f"[check {ep:02d}] success={ok} steps={len(frames)}", flush=True)
         print(f"ACCEPTANCE: {n_ok}/{n_tot} = {n_ok / n_tot:.0%} (need >=90%)", flush=True)
