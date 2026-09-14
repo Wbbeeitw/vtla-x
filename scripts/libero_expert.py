@@ -2,11 +2,15 @@
 (put_the_wine_bottle_on_the_rack, libero_goal).
 
 Serves OSC_POSE deltas toward ground-truth waypoints (sim gives free object
-poses) with a fixed state machine. Acceptance bar: >=90% success over 30
-random inits before any data collection.
+poses) with a fixed state machine + load-sag compensation.
 
-Tuning knobs live in ExpertConfig; the acceptance loop
-(scripts/collect_wine_rack.py --check) sweeps random inits to verify.
+Key behaviors:
+- High grasp (bottle upper body): the arm cannot descend near its base.
+- 3-dim load-sag compensation accumulates observed shortfalls (resets per
+  episode).
+- above_rack proceeds to descend after a bounded wait (no perfect-alignment
+  requirement); place releases unconditionally after a bounded descent.
+- Acceptance bar: >=90% success over 30 random inits before any data collection.
 """
 import time
 
@@ -28,13 +32,11 @@ class ExpertConfig:
     close_steps: int = 15
     release_steps: int = 10
     state_timeout: int = 80
-    comp_max: float = 0.15       # max 3-dim sag/load compensation (norm)
-    slow_factor: float = 0.5      # speed scale during rack descent
+    comp_max: float = 0.15        # max 3-dim sag/load compensation (norm)
+    place_steps: int = 150        # bounded descent before unconditional release
 
 
 class WineRackExpert:
-    """States: pregrasp -> approach -> close -> lift -> above_rack -> place -> release -> done."""
-
     def __init__(self, env, cfg: ExpertConfig | None = None):
         self.env = env
         self.cfg = cfg or ExpertConfig()
@@ -42,11 +44,9 @@ class WineRackExpert:
         m = sim.model
         self.bottle_id = m.body_name2id("wine_bottle_1_main")
         self.rack_id = m.site_name2id("wine_rack_1_top_region")
-        self.eef_id = m.body_name2id("gripper0_eef")
-        self.comp = np.zeros(3)  # eef BODY (controller frame origin); pos via body_xpos
-        self.t0 = time.time()
+        self.eef_id = m.body_name2id("gripper0_eef")  # eef BODY (controller frame)
+        self.comp = np.zeros(3)
 
-    # ---- ground truth -------------------------------------------------
     def _bottle_pos(self, sim):
         return sim.data.body_xpos[self.bottle_id].copy()
 
@@ -56,85 +56,117 @@ class WineRackExpert:
     def _eef_pos(self, sim):
         return sim.data.body_xpos[self.eef_id].copy()
 
-    # ---- core servo ---------------------------------------------------
     def _servo_action(self, sim, target, gripper, scale=1.0):
         cur = self._eef_pos(sim)
         delta = np.clip(self.cfg.k_pos * (target - cur) * scale,
                         -self.cfg.max_delta, self.cfg.max_delta)
         return np.concatenate([delta, np.zeros(3), [gripper]]).astype(np.float32)
 
-    # ---- episode driver -------------------------------------------------
+    def _check(self, env):
+        check = getattr(env, "check_success", None) or env._check_success
+        return check()
+
     def rollout(self, verbose=False, init_state=None):
-        """Run one episode; returns (success, frames) where frames is a list of
-        per-step dicts {action, tactile60, wrist_ft, image, wrist_image, state}.
-        The caller (collector) owns recording and LeRobot writing."""
+        """One episode; returns (success, frames). frames carry per-step
+        {action, tactile60, wrist_ft, image, wrist_image, state, state_name}."""
         env, cfg = self.env, self.cfg
         from rlinf.envs.sim.libero.tactile_patch import TactileReader
         reader = TactileReader(env.sim)
 
         obs = env.reset()
-        self.comp = np.zeros(3)  # per-episode reset: sag compensation must not leak
+        self.comp = np.zeros(3)  # per-episode reset: compensation must not leak
         if init_state is not None:
             sim = env.sim
             nq, nv = sim.model.nq, sim.model.nv
             sim.data.qpos[:] = init_state[1:1 + nq]
-            sim.data.qvel[:] = init_state[1 + nq:1 + nq + nv]
+            sim.data.qvel[:] = init_state[1 + nq:1 + nv]
             sim.forward()
             obs, _, _, _ = env.step(np.zeros(7))
         frames = []
-        state, t_in_state, gripper = "pregrasp", 0, 1.0
+
+        state, t_state = "pregrasp", 0
         grasp_pos = None
+        comp_printed = False
 
         for t in range(cfg.max_steps):
             sim = env.sim
             bottle = self._bottle_pos(sim)
             rack = self._rack_pos(sim)
+            eef = self._eef_pos(sim)
 
+            # ---- state targets -------------------------------------------
             if state == "pregrasp":
                 target = bottle + np.array([0, 0, cfg.pregrasp_z_off])
                 gripper = 1.0
-                if np.linalg.norm(self._eef_pos(sim) - target) < 0.02:
-                    state, t_in_state = "approach", 0
             elif state == "approach":
                 target = bottle + np.array([0, 0, cfg.grasp_z_off])
                 gripper = 1.0
-                if np.linalg.norm(self._eef_pos(sim) - target) < 0.012:
-                    state, t_in_state = "close", 0
-                    grasp_pos = self._eef_pos(sim).copy()
             elif state == "close":
-                target = grasp_pos
+                target = eef.copy()
                 gripper = -1.0
-                if t_in_state >= cfg.close_steps:
-                    state, t_in_state = "lift", 0
             elif state == "lift":
-                target = grasp_pos + np.array([cfg.lift_dx, 0, cfg.lift_dz])
+                target = (grasp_pos if grasp_pos is not None else eef) + \
+                    np.array([cfg.lift_dx, 0, cfg.lift_dz])
                 gripper = -1.0
-                if np.linalg.norm(self._eef_pos(sim) - target) < 0.02:
-                    state, t_in_state = "above_rack", 0
             elif state == "above_rack":
                 target = rack + np.array([0, 0, cfg.rack_above_dz])
                 gripper = -1.0
-                if np.linalg.norm(self._eef_pos(sim) - target) < 0.02:
-                    state, t_in_state = "place", 0
             elif state == "place":
                 target = rack + np.array([0, 0, cfg.rack_place_dz])
                 gripper = -1.0
-                if np.linalg.norm(self._eef_pos(sim) - target) < 0.015:
-                    state, t_in_state = "release", 0
             elif state == "release":
-                target = self._eef_pos(sim)
+                target = eef.copy()
                 gripper = 1.0
-                if t_in_state >= cfg.release_steps:
-                    state, t_in_state = "retreat", 0
-            elif state == "retreat":
-                target = self._eef_pos(sim) + np.array([0, 0, 0.10])
+            else:  # retreat
+                target = eef + np.array([0, 0, 0.10])
                 gripper = 1.0
 
-            target = target.copy() + self.comp
-            action = self._servo_action(sim, target, gripper,
+            goal = target + self.comp
+
+            # ---- transitions ---------------------------------------------
+            if state == "pregrasp":
+                if np.linalg.norm(eef - goal) < 0.03:
+                    state, t_state = "approach", 0
+            elif state == "approach":
+                if np.linalg.norm(eef - goal) < 0.015:
+                    state, t_state = "close", 0
+                    grasp_pos = eef.copy()
+            elif state == "close":
+                if t_state >= cfg.close_steps:
+                    state, t_state = "lift", 0
+                    grasp_pos = eef.copy()
+            elif state == "lift":
+                if np.linalg.norm(eef - goal) < 0.03:
+                    state, t_state = "above_rack", 0
+            elif state == "above_rack":
+                # carry sag: correct once, then descend regardless — the
+                # place phase lets the bottle contact the slot (tactile).
+                if np.linalg.norm(eef - goal) < 0.03:
+                    state, t_state = "place", 0
+                elif t_state >= cfg.state_timeout // 2 and not comp_printed:
+                    self.comp = np.clip(self.comp + (goal - eef) * 0.8,
+                                        -cfg.comp_max, cfg.comp_max)
+                    comp_printed = True
+                    t_state = 0
+            elif state == "place":
+                if np.linalg.norm(eef - goal) < 0.02 or t_state >= cfg.place_steps:
+                    state, t_state = "release", 0
+            elif state == "release":
+                if t_state >= cfg.release_steps:
+                    state, t_state = "retreat", 0
+
+            # ---- hard timeouts (pre-grasp phases must not grind) ---------
+            if state in ("pregrasp", "approach", "close", "lift") and \
+                    t_state >= cfg.state_timeout:
+                if verbose:
+                    print(f"  [timeout {state}] eef={np.round(eef,3)} "
+                          f"goal={np.round(goal,3)}", flush=True)
+                return False, frames
+
+            action = self._servo_action(sim, goal, gripper,
                                         scale=cfg.slow_factor if state == "place" else 1.0)
             obs, _, _, _ = env.step(action)
-            t_in_state += 1
+            t_state += 1
 
             frames.append({
                 "action": action.copy(),
@@ -151,24 +183,10 @@ class WineRackExpert:
             })
 
             if verbose and t % 40 == 0:
-                print(f"  t={t} state={state}", flush=True)
+                print(f"  t={t} state={state} eef={np.round(eef,3)} "
+                      f"goal={np.round(goal,3)}", flush=True)
 
-            check = getattr(env, "check_success", None) or env._check_success
-            if check():
+            if self._check(env):
                 return True, frames
-            if t_in_state >= cfg.state_timeout:
-                cur = self._eef_pos(sim)
-                shortfall = target - cur
-                if np.linalg.norm(shortfall) > 0.01 and np.linalg.norm(self.comp) < cfg.comp_max:
-                    self.comp = self.comp + shortfall * 0.8
-                    if np.linalg.norm(self.comp) > cfg.comp_max:
-                        self.comp = self.comp / np.linalg.norm(self.comp) * cfg.comp_max
-                    t_in_state = 0
-                    print(f"  [comp {np.round(self.comp,3)}] state={state}", flush=True)
-                else:
-                    print(f"  [timeout {state}] eef={np.round(cur,3)} target="
-                          f"{np.round(target,3)} dist={np.linalg.norm(cur - target):.3f} "
-                          f"bottle={np.round(self._bottle_pos(sim),3)}", flush=True)
-                    return False, frames
 
         return False, frames
