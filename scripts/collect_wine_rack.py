@@ -10,6 +10,7 @@ Writes LeRobot v2.x dataset `wine_rack_tactile` under HF_LEROBOT_HOME
 import argparse
 import os
 import sys
+import traceback
 
 sys.path.insert(0, "/workspace/RLinf")
 sys.path.insert(0, "/opt/venv/openpi/libero")
@@ -91,6 +92,7 @@ def main():
             try:
                 ok, frames = expert.rollout(init_state=init, verbose=(ep % 10 == 0))
             except Exception as e:
+                traceback.print_exc()
                 print(f"[check {ep:02d}] env exception: {type(e).__name__} {str(e)[:90]}", flush=True)
                 env, expert = build()  # GL/teardown noise: rebuild and continue
                 continue
