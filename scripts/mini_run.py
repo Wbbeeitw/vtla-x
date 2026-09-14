@@ -18,7 +18,7 @@ ok, frames = expert.rollout(init_state=init_states[0], verbose=True)
 sim = env.sim
 bp = sim.data.body_xpos[sim.model.body_name2id("wine_bottle_1_main")]
 rp = sim.data.site_xpos[sim.model.site_name2id("wine_rack_1_top_region")]
-j1 = sim.model.joint_name2id("finger_joint1")
+j1 = sim.model.joint_name2id("gripper0_finger_joint1")
 gq = sim.data.qpos[sim.model.jnt_qposadr[j1]]
 print("RESULT:", ok, len(frames))
 print("bottle end:", np.round(bp,3), "| slot:", np.round(rp,3), "| horiz gap:", round(float(np.linalg.norm(bp[:2]-rp[:2])),3))

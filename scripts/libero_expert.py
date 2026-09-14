@@ -157,13 +157,25 @@ class WineRackExpert:
                 if t_state >= cfg.release_steps:
                     state, t_state = "retreat", 0
 
-            # ---- hard timeouts (pre-grasp phases must not grind) ---------
+            # ---- sag compensation for pre-grasp phases --------------------
+            # the impedance controller sags ~3cm in z under gravity; iterate
+            # the compensation instead of failing (bounded to 4 adjustments)
             if state in ("pregrasp", "approach", "close", "lift") and \
                     t_state >= cfg.state_timeout:
-                if verbose:
-                    print(f"  [timeout {state}] eef={np.round(eef,3)} "
-                          f"goal={np.round(goal,3)}", flush=True)
-                return False, frames
+                shortfall = goal - eef
+                if np.linalg.norm(shortfall) > 0.005 and self.comp_adjust < 4:
+                    self.comp = np.clip(self.comp + shortfall * 0.8,
+                                        -cfg.comp_max, cfg.comp_max)
+                    self.comp_adjust += 1
+                    t_state = 0
+                    if verbose:
+                        print(f"  [comp {np.round(self.comp,3)}] {state} "
+                              f"dist={np.linalg.norm(shortfall):.3f}", flush=True)
+                else:
+                    if verbose:
+                        print(f"  [timeout {state}] eef={np.round(eef,3)} "
+                              f"goal={np.round(goal,3)}", flush=True)
+                    return False, frames
 
             scale = cfg.slow_factor if state in ("lift", "above_rack", "place") else 1.0
             action = self._servo_action(sim, goal, gripper, scale=scale)
