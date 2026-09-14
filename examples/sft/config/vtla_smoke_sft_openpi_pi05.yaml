@@ -18,7 +18,7 @@ cluster:
 runner:
   task_type: sft
   logger:
-    log_path: "/data_vtlax/logs"
+    log_path: "/data_vtlax/results/sft_smoke"
     project_name: vtla-x
     experiment_name: "smoke_pi05_libero_200"
     logger_backends: ["tensorboard"]
@@ -40,9 +40,11 @@ actor:
   seed: 0
 
   model:
-    # Pipeline-validation smoke: use the openpi-format SFT weights
-    # (native for RLinf loader). Mounted at original host path.
+    # Pipeline-validation smoke: openpi-format SFT weights as init,
+    # LoRA on (the four-arm runs also use LoRA — validate the same path).
     model_path: "/home/enine/rlinf_workspace/models/RLinf-Pi05-LIBERO-SFT"
+    is_lora: True
+    lora_rank: 32
     num_action_chunks: 10
     action_dim: 7
     add_value_head: False
