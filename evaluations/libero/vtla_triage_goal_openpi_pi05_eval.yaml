@@ -61,8 +61,10 @@ rollout:
   pipeline_stage_num: 1
 
   model:
-    # their proven goal x pi05 weights (openpi torch format, 7.0G)
-    model_path: "/ws_models/RLinf-Pi05-LIBERO-SFT"
+    # triage base = raw pi05_libero_base (0% zero-shot on contact tasks,
+    # max headroom). lerobot format — loader compatibility must be
+    # smoke-checked first; fallback = format conversion.
+    model_path: "/data_vtla/hf/hub/models--lerobot--pi05_libero_base/snapshots/a217bfd3b14673cf2ce597e69997ab21866438dd"
     model_type: "openpi"
     num_action_chunks: 5
     num_steps: 5

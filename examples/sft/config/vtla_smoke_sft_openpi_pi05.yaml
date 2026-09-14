@@ -40,9 +40,9 @@ actor:
   seed: 0
 
   model:
-    # Zero-copy: point directly at the pi05_libero_base snapshot in the
-    # read-only mount. HF-cache relative symlinks resolve within the mount.
-    model_path: "/data_vtla/hf/hub/models--lerobot--pi05_libero_base/snapshots/a217bfd3b14673cf2ce597e69997ab21866438dd"
+    # Pipeline-validation smoke: use the openpi-format SFT weights
+    # (native for RLinf loader). Mounted at original host path.
+    model_path: "/home/enine/rlinf_workspace/models/RLinf-Pi05-LIBERO-SFT"
     num_action_chunks: 10
     action_dim: 7
     add_value_head: False
