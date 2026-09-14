@@ -29,10 +29,10 @@ runner:
   save_interval: 100
 
 data:
-  # Clean repo name resolved under HF_LEROBOT_HOME (= /data_vtlax/datasets,
-  # where our writable LIBERO copy lives). Absolute paths break lerobot's
-  # hub-repo-id validation.
-  train_data_paths: "lerobot_libero"
+  # Official PI LIBERO LeRobot dataset (v2.1 format, matches container's
+  # lerobot 0.1.0 and the pi05_libero dataconfig exactly). Downloaded once
+  # into HF_LEROBOT_HOME=/data_vtlax/datasets via the repo-name convention.
+  train_data_paths: "physical-intelligence/libero"
 
 actor:
   group_name: "ActorGroup"
