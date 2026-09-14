@@ -152,8 +152,9 @@ class WineRackExpert:
                 return True, frames
             if t_in_state >= cfg.state_timeout:
                 cur = self._eef_pos(sim)
-                print(f"  [timeout {state}] eef={np.round(cur,3)} dist="
-                      f"{np.linalg.norm(cur - target):.3f}", flush=True)
+                print(f"  [timeout {state}] eef={np.round(cur,3)} target="
+                      f"{np.round(target,3)} dist={np.linalg.norm(cur - target):.3f} "
+                      f"bottle={np.round(self._bottle_pos(sim),3)}", flush=True)
                 return False, frames
 
         return False, frames
