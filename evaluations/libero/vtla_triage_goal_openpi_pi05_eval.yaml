@@ -61,10 +61,10 @@ rollout:
   pipeline_stage_num: 1
 
   model:
-    # triage base = raw pi05_libero_base (0% zero-shot on contact tasks,
-    # max headroom). lerobot format — loader compatibility must be
-    # smoke-checked first; fallback = format conversion.
-    model_path: "/data_vtla/hf/hub/models--lerobot--pi05_libero_base/snapshots/a217bfd3b14673cf2ce597e69997ab21866438dd"
+    # pi05_libero_base + restored pretrained language embed_tokens
+    # (the released checkpoints omit the frozen embed; merged via
+    # scripts/dl_embed2.py + fix_embed_slice.py)
+    model_path: "/data_vtlax/checkpoints/pi05_libero_base_openpi"
     openpi_data:
       # Reuse RLinf's released LIBERO norm stats (openpi format, computed on
       # LIBERO data) instead of recomputing. Path resolves via the
