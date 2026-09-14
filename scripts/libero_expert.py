@@ -37,8 +37,8 @@ class WineRackExpert:
         self.cfg = cfg or ExpertConfig()
         sim = env.sim
         m = sim.model
-        self.bottle_id = m.body_name2id("wine_bottle_1")
-        self.rack_id = m.body_name2id("wine_rack_1")
+        self.bottle_id = m.body_name2id("wine_bottle_1_main")
+        self.rack_id = m.body_name2id("wine_rack_1_main")
         self.eef_id = m.site_name2id("grip_site")
         self.t0 = time.time()
 
