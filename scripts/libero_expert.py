@@ -21,7 +21,7 @@ class ExpertConfig:
     max_steps: int = 600
     k_pos: float = 8.0            # proportional gain on position servo
     max_delta: float = 0.08       # per-step pos delta clip (m)
-    grasp_z_off: float = 0.20     # grasp the bottle's UPPER body: the arm
+    grasp_z_off: float = 0.15     # grasp the bottle's UPPER body: the arm
                                   # cannot descend near its base, and a
                                   # high carry hangs the bottle into the slot
     pregrasp_z_off: float = 0.26
@@ -165,8 +165,8 @@ class WineRackExpert:
                           f"goal={np.round(goal,3)}", flush=True)
                 return False, frames
 
-            action = self._servo_action(sim, goal, gripper,
-                                        scale=cfg.slow_factor if state == "place" else 1.0)
+            scale = cfg.slow_factor if state in ("lift", "above_rack", "place") else 1.0
+            action = self._servo_action(sim, goal, gripper, scale=scale)
             obs, _, _, _ = env.step(action)
             t_state += 1
 

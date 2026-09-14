@@ -78,6 +78,10 @@ def apply_touch_patch(xml_path: Path | None = None) -> Path:
     xml = xml.replace("</sensor>", f"{sensors}\n</sensor>", 1)
     xml = xml.replace("<sensor>", f"{MARKER}\n    <sensor>", 1)
 
+    # tactile skin surface = high-friction pads (mirrors the real T-Piezo
+    # skin material; smooth finger mesh friction 1.0 slips on cylinders)
+    xml = xml.replace('friction="1 0.005 0.0001"', 'friction="2.5 0.01 0.0001"')
+
     p.write_text(xml)
     return p
 
