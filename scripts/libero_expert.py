@@ -73,6 +73,7 @@ class WineRackExpert:
         reader = TactileReader(env.sim)
 
         obs = env.reset()
+        self.comp = np.zeros(3)  # per-episode reset: sag compensation must not leak
         if init_state is not None:
             sim = env.sim
             nq, nv = sim.model.nq, sim.model.nv
