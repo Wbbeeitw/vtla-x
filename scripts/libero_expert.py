@@ -17,12 +17,14 @@ class ExpertConfig:
     max_steps: int = 320
     k_pos: float = 8.0            # proportional gain on position servo
     max_delta: float = 0.08       # per-step pos delta clip (m)
-    grasp_z_off: float = 0.08     # bottle grasp height above bottle base
-    pregrasp_z_off: float = 0.15
+    grasp_z_off: float = 0.20     # grasp the bottle's UPPER body: the arm
+                                  # cannot descend near its base, and a
+                                  # high carry hangs the bottle into the slot
+    pregrasp_z_off: float = 0.26
     lift_dx: float = 0.0
-    lift_dz: float = 0.15
+    lift_dz: float = 0.05
     rack_above_dz: float = 0.15
-    rack_place_dz: float = 0.03
+    rack_place_dz: float = 0.02
     close_steps: int = 15
     release_steps: int = 10
     state_timeout: int = 80
