@@ -43,8 +43,12 @@ PLACE_TOUCH_MIN = 0.5
 
 
 def make_env(bddl):
+    from robosuite.controllers import load_controller_config
+    cc = load_controller_config(default_controller="OSC_POSE")
+    cc["kp"] = 300  # reduce gravity sag (limit is 300)
     return OffScreenRenderEnv(
         bddl_file_name=bddl,
+        controller_configs=cc,
         has_renderer=False,
         has_offscreen_renderer=True,
         use_camera_obs=True,
