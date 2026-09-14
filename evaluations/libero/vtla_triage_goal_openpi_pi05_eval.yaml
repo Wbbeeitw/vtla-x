@@ -66,9 +66,10 @@ rollout:
     # smoke-checked first; fallback = format conversion.
     model_path: "/data_vtla/hf/hub/models--lerobot--pi05_libero_base/snapshots/a217bfd3b14673cf2ce597e69997ab21866438dd"
     openpi_data:
-      # openpi-format stats computed from lerobot_libero by
-      # toolkits/lerobot/calculate_norm_stats.py (run before eval).
-      norm_stats_path: "/data_vtlax/norm_stats/lerobot_libero/norm_stats.json"
+      # Reuse RLinf's released LIBERO norm stats (openpi format, computed on
+      # LIBERO data) instead of recomputing. Path resolves via the
+      # norm_stats_path convention: assets_dir=parent, asset_id="libero".
+      norm_stats_path: "/home/enine/rlinf_workspace/models/RLinf-Pi05-LIBERO-SFT/physical-intelligence/libero/norm_stats.json"
     model_type: "openpi"
     num_action_chunks: 5
     num_steps: 5
