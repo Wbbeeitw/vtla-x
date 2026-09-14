@@ -18,7 +18,7 @@ import numpy as np
 
 
 class ExpertConfig:
-    max_steps: int = 320
+    max_steps: int = 600
     k_pos: float = 8.0            # proportional gain on position servo
     max_delta: float = 0.08       # per-step pos delta clip (m)
     grasp_z_off: float = 0.20     # grasp the bottle's UPPER body: the arm
@@ -75,6 +75,7 @@ class WineRackExpert:
 
         obs = env.reset()
         self.comp = np.zeros(3)  # per-episode reset: compensation must not leak
+        self.comp_adjust = 0
         if init_state is not None:
             sim = env.sim
             nq, nv = sim.model.nq, sim.model.nv
@@ -143,10 +144,10 @@ class WineRackExpert:
                 # place phase lets the bottle contact the slot (tactile).
                 if np.linalg.norm(eef - goal) < 0.03:
                     state, t_state = "place", 0
-                elif t_state >= cfg.state_timeout // 2 and not comp_printed:
+                elif t_state >= cfg.state_timeout // 2 and self.comp_adjust < 3:
                     self.comp = np.clip(self.comp + (goal - eef) * 0.8,
                                         -cfg.comp_max, cfg.comp_max)
-                    comp_printed = True
+                    self.comp_adjust += 1
                     t_state = 0
             elif state == "place":
                 if np.linalg.norm(eef - goal) < 0.02 or t_state >= cfg.place_steps:
