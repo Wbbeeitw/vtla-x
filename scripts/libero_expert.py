@@ -79,7 +79,7 @@ class WineRackExpert:
             sim = env.sim
             nq, nv = sim.model.nq, sim.model.nv
             sim.data.qpos[:] = init_state[1:1 + nq]
-            sim.data.qvel[:] = init_state[1 + nq:1 + nv]
+            sim.data.qvel[:] = init_state[1 + nq:1 + nq + nv]
             sim.forward()
             obs, _, _, _ = env.step(np.zeros(7))
         frames = []
