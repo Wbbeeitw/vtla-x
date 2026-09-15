@@ -36,31 +36,19 @@ all_taxel_active = np.zeros(60, dtype=int)
 all_len = []
 fail_rows = []
 
-# group all frames by episode_index while streaming
-by_ep = {}
-order = []
-for i in range(total_frames):
-    item = ds[i]
-    e = int(item["episode_index"])
-    if e not in by_ep:
-        by_ep[e] = {"tac": [], "ft": [], "st": [], "act": [], "img": []}
-        order.append(e)
-    by_ep[e]["tac"].append(item["observation.tactile"].numpy())
-    by_ep[e]["ft"].append(item["observation.wrist_ft"].numpy())
-    by_ep[e]["st"].append(item["state"].numpy())
-    by_ep[e]["act"].append(item["action"].numpy())
-    by_ep[e]["img"].append(item["image"].numpy())
-    if (i + 1) % 500 == 0:
-        print(f"  streamed {i+1}/{total_frames} frames", flush=True)
+# read true episode boundaries from info.json (authoritative)
+info = json.load(open(os.path.join(ROOT, "meta", "info.json")))
+ep_lengths = {ep["episode_index"]: ep["length"] for ep in info["episodes"]}
+print("episodes from info.json:", len(ep_lengths), flush=True)
 
 report_eps = []
-for ep_key in order:
-    d = by_ep[ep_key]
-    length = len(d["tac"])
-    rec = {"episode_index": int(ep_key), "frames": int(length)}
+for ep_idx in sorted(ep_lengths):
+    f0 = start_of[ep_idx]
+    length = ep_lengths[ep_idx]
+    rec = {"episode_index": int(ep_idx), "frames": int(length)}
 
-    # ---- tactile ----
-    tac = np.asarray(d["tac"], dtype=np.float64).reshape(length, -1)
+    # ---- per-frame read via LeRobotDataset slicing ----
+    seg = ds[f0:f0 + length]
     # ---- tactile ----
     rec["tactile_max"] = float(tac.max())
     rec["tactile_mean"] = float(tac.mean())
