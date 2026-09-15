@@ -36,6 +36,24 @@ from robosuite.utils.transform_utils import quat2axisangle  # noqa: E402
 
 from rlinf.models.embodiment.openpi import get_model  # noqa: E402
 
+# DEBUG: instrument resize_with_pad input
+import openpi_client.image_tools as _it  # noqa: E402
+_orig_resize = _it.resize_with_pad
+def _dbg_resize(images, *a, **k):
+    try:
+        arr = np.asarray(images)
+        print("RESIZE_IN shape:", arr.shape, arr.dtype, flush=True)
+    except Exception as e:
+        print("RESIZE_IN asarray FAIL:", type(e).__name__, str(e)[:80], flush=True)
+        print("RESIZE_IN raw type:", type(images), "len:", len(images) if hasattr(images, "__len__") else "?", flush=True)
+        try:
+            for i, item in enumerate(images):
+                print("  item", i, type(item).__name__, np.shape(item), flush=True)
+        except Exception as e2:
+            print("  iterate fail:", e2, flush=True)
+    return _orig_resize(images, *a, **k)
+_it.resize_with_pad = _dbg_resize
+
 PROMPT = "put the wine bottle on the wine rack"
 GRASP_TOUCH_MIN = 1.0
 PLACE_TOUCH_MIN = 0.5
