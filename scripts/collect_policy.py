@@ -36,35 +36,7 @@ from robosuite.utils.transform_utils import quat2axisangle  # noqa: E402
 
 from rlinf.models.embodiment.openpi import get_model  # noqa: E402
 
-# DEBUG: instrument resize_with_pad input (temporary)
-import openpi_client.image_tools as _it  # noqa: E402
-_orig_resize = _it.resize_with_pad
-def _dbg_resize(images, *a, **k):
-    try:
-        arr = np.asarray(images)
-        print("RESIZE_IN", arr.shape, arr.dtype, flush=True)
-    except Exception as e:
-        print("RESIZE_IN asarray FAIL:", type(e).__name__, str(e)[:80], flush=True)
-    return _orig_resize(images, *a, **k)
-_it.resize_with_pad = _dbg_resize
 
-# DEBUG: instrument resize_with_pad input
-import openpi_client.image_tools as _it  # noqa: E402
-_orig_resize = _it.resize_with_pad
-def _dbg_resize(images, *a, **k):
-    try:
-        arr = np.asarray(images)
-        print("RESIZE_IN shape:", arr.shape, arr.dtype, flush=True)
-    except Exception as e:
-        print("RESIZE_IN asarray FAIL:", type(e).__name__, str(e)[:80], flush=True)
-        print("RESIZE_IN raw type:", type(images), "len:", len(images) if hasattr(images, "__len__") else "?", flush=True)
-        try:
-            for i, item in enumerate(images):
-                print("  item", i, type(item).__name__, np.shape(item), flush=True)
-        except Exception as e2:
-            print("  iterate fail:", e2, flush=True)
-    return _orig_resize(images, *a, **k)
-_it.resize_with_pad = _dbg_resize
 
 PROMPT = "put the wine bottle on the wine rack"
 GRASP_TOUCH_MIN = 1.0
@@ -95,17 +67,21 @@ def build_model(config_dir, config_name):
     return model
 
 
-def to_env_obs(obs, prompt, device):
+def to_env_obs(obs, prompt):
+    """Byte-for-byte the format the working RLinf eval passes to
+    predict_action_batch (verified via ray-worker debug print):
+    stacked 4D uint8 numpy images, (B,8) float32 state, list-of-str prompts.
+    NO 'actions' key (obs_processor drops it anyway); no torch/cuda wrapping —
+    lists-of-3D-tensors get row-sliced by tree_map's x[i] batch indexing."""
     state = np.concatenate([
         obs["robot0_eef_pos"],
         quat2axisangle(obs["robot0_eef_quat"]),
         obs["robot0_gripper_qpos"],
     ]).astype(np.float32)
     return {
-        "main_images": [torch.from_numpy(obs["agentview_image"]).to(device)],
-        "wrist_images": [torch.from_numpy(obs["robot0_eye_in_hand_image"]).to(device)],
-        "states": torch.from_numpy(state[None]).to(device),
-        "actions": torch.zeros(1, 7).to(device),  # placeholder; replaced by flow noise
+        "main_images": obs["agentview_image"][None],
+        "wrist_images": obs["robot0_eye_in_hand_image"][None],
+        "states": state[None],
         "task_descriptions": [prompt],
         "extra_view_images": None,
     }
@@ -164,7 +140,7 @@ def main():
         steps = 0
         done = False
         while not done and steps < 320:
-            env_obs = to_env_obs(obs, PROMPT, device)
+            env_obs = to_env_obs(obs, PROMPT)
             with torch.no_grad():
                 actions, _ = model.predict_action_batch(env_obs=env_obs, mode="eval")
             chunk = np.asarray(actions.detach().cpu().numpy())
@@ -173,10 +149,11 @@ def main():
             for a in chunk:
                 tactile = reader.tactile(env.sim).copy()
                 ft = reader.wrist_ft(env.sim).copy()
+                state8 = env_obs["states"][0]
                 frames.append({
                     "image": obs["agentview_image"].copy(),
                     "wrist_image": obs["robot0_eye_in_hand_image"].copy(),
-                    "state": env_obs["states"][0].cpu().numpy(),
+                    "state": state8,
                     "action": a.copy(),
                     "observation.tactile": tactile,
                     "observation.wrist_ft": ft,
