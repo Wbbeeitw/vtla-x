@@ -137,14 +137,18 @@ def main():
         env.seed(args.seed + ep)
         obs = env.reset()
         # inject the benchmark init state (same distribution the PPO policy
-        # was evaluated on — its 93.75% success lives here, not in raw resets)
+        # was evaluated on) + replicate the eval's settling: 15 zero-action
+        # steps with the gripper forced OPEN (rlinf libero_env.reset does this)
         init = init_states[ep % len(init_states)]
         sim = env.sim
         nq, nv = sim.model.nq, sim.model.nv
         sim.data.qpos[:] = init[1:1 + nq]
         sim.data.qvel[:] = init[1 + nq:1 + nq + nv]
         sim.forward()
-        obs, _, _, _ = env.step(np.zeros(7, dtype=np.float64))
+        settle = np.zeros(7, dtype=np.float64)
+        settle[-1] = -1.0  # gripper open during settling
+        for _ in range(15):
+            obs, _, _, _ = env.step(settle)
 
         frames = []
         steps = 0
