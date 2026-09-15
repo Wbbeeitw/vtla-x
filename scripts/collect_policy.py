@@ -112,6 +112,7 @@ def main():
     bench_cls = benchmark.get_benchmark_dict()["libero_goal"]
     bench = bench_cls(task_order_index=0)
     bddl = bench.get_task_bddl_file_path(0)
+    init_states = bench.get_task_init_states(0)  # same init pool as the eval
     check = lambda e: (e.check_success() if hasattr(e, "check_success")
                        else e._check_success())
 
@@ -135,6 +136,15 @@ def main():
     while n_saved < args.n_demos and ep < args.n_demos * 6:
         env.seed(args.seed + ep)
         obs = env.reset()
+        # inject the benchmark init state (same distribution the PPO policy
+        # was evaluated on — its 93.75% success lives here, not in raw resets)
+        init = init_states[ep % len(init_states)]
+        sim = env.sim
+        nq, nv = sim.model.nq, sim.model.nv
+        sim.data.qpos[:] = init[1:1 + nq]
+        sim.data.qvel[:] = init[1 + nq:1 + nq + nv]
+        sim.forward()
+        obs, _, _, _ = env.step(np.zeros(7, dtype=np.float64))
 
         frames = []
         steps = 0
