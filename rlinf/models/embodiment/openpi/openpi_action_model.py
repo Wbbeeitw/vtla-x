@@ -846,7 +846,7 @@ class OpenPi0ForRLActionPrediction(PI0Pytorch, BasePolicy):
         rtc_context: RTCGuidanceContext | None = None,
         **kwargs,
     ) -> tuple[torch.Tensor, dict[str, Any]]:
-        if os.environ.get("DEBUG_PREDICT_KEYS"):
+        if True:  # DEBUG (temporary)
             def _dbg_shape(v):
                 if isinstance(v, dict):
                     return {k: _dbg_shape(x) for k, x in v.items()}
