@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+import os
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -845,6 +846,16 @@ class OpenPi0ForRLActionPrediction(PI0Pytorch, BasePolicy):
         rtc_context: RTCGuidanceContext | None = None,
         **kwargs,
     ) -> tuple[torch.Tensor, dict[str, Any]]:
+        if os.environ.get("DEBUG_PREDICT_KEYS"):
+            def _dbg_shape(v):
+                if isinstance(v, dict):
+                    return {k: _dbg_shape(x) for k, x in v.items()}
+                if isinstance(v, (list, tuple)):
+                    return [_dbg_shape(x) for x in v]
+                if hasattr(v, "shape"):
+                    return tuple(v.shape)
+                return type(v).__name__
+            print("DEBUG_PREDICT_KEYS:", _dbg_shape(env_obs), flush=True)
         to_process_obs = self.obs_processor(env_obs)  # env obs -> policy input obs
         processed_obs = self.input_transform(
             to_process_obs, transpose=False

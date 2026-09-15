@@ -74,6 +74,7 @@ def to_env_obs(obs, prompt):
         "main_images": [obs["agentview_image"]],
         "wrist_images": [obs["robot0_eye_in_hand_image"]],
         "states": state[None],
+        "actions": np.zeros((1, 7), np.float32),  # placeholder; replaced by flow noise
         "task_descriptions": [prompt],
         "extra_view_images": None,
     }
