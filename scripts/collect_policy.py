@@ -83,7 +83,8 @@ def main():
                     total_num_processes=1, worker_info=None)
     model = get_model(model_cfg)
     model.eval()
-    reader = TactileReader(env.sim)
+    sim = env.env.sim  # robosuite MjSim inside LiberoEnv wrapper
+    reader = TactileReader(sim)
 
     ds = LeRobotDataset.create(args.out, fps=20, features={
         "image": {"dtype": "video", "shape": (256, 256, 3),
@@ -120,8 +121,8 @@ def main():
                     "state": obs["states"][0] if len(obs["states"].shape) > 1
                         else obs["states"],
                     "action": a.copy(),
-                    "observation.tactile": reader.tactile(env.sim).copy(),
-                    "observation.wrist_ft": reader.wrist_ft(env.sim).copy(),
+                    "observation.tactile": reader.tactile(sim).copy(),
+                    "observation.wrist_ft": reader.wrist_ft(sim).copy(),
                     "task": PROMPT,
                 })
                 obs, _, _, _ = env.step(a)
