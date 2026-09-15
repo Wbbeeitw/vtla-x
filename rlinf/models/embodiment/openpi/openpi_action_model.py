@@ -847,6 +847,7 @@ class OpenPi0ForRLActionPrediction(PI0Pytorch, BasePolicy):
         **kwargs,
     ) -> tuple[torch.Tensor, dict[str, Any]]:
         if True:  # DEBUG (temporary)
+            import logging, traceback
             def _dbg_shape(v):
                 if isinstance(v, dict):
                     return {k: _dbg_shape(x) for k, x in v.items()}
@@ -855,7 +856,8 @@ class OpenPi0ForRLActionPrediction(PI0Pytorch, BasePolicy):
                 if hasattr(v, "shape"):
                     return tuple(v.shape)
                 return type(v).__name__
-            print("DEBUG_PREDICT_KEYS:", _dbg_shape(env_obs), flush=True)
+            logging.info("DEBUG_PREDICT_KEYS: %s", _dbg_shape(env_obs))
+            logging.info("DEBUG_FULL: %s", repr(env_obs)[:2000])
         to_process_obs = self.obs_processor(env_obs)  # env obs -> policy input obs
         processed_obs = self.input_transform(
             to_process_obs, transpose=False
