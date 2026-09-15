@@ -32,15 +32,38 @@ apply_touch_patch()  # must precede env construction
 from libero.libero import benchmark  # noqa: E402
 from libero.libero.envs import OffScreenRenderEnv  # noqa: E402
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset  # noqa: E402
-from robosuite.utils.transform_utils import quat2axisangle  # noqa: E402
+# use rlinf's OWN obs helpers — identical preprocessing to the working eval
+# (robosuite raw camera frames need the 180° flip; state needs axisangle conv)
+from rlinf.envs.sim.libero.utils import (  # noqa: E402
+    get_libero_image,
+    get_libero_wrist_image,
+    quat2axisangle,
+)
 
 from rlinf.models.embodiment.openpi import get_model  # noqa: E402
 
 
 
-PROMPT = "put the wine bottle on the wine rack"
+# exact benchmark task string (policies are sensitive to the literal prompt)
+PROMPT = None  # filled at runtime from bench.get_task(0).language
 GRASP_TOUCH_MIN = 1.0
 PLACE_TOUCH_MIN = 0.5
+
+
+def tactile_event_ok(frames):
+    """QC: meaningful contact events exist somewhere in the episode.
+    (Splitting by halves assumed grasp-early/place-late, but the policy
+    often wanders first and grasps late — phase timing is not reliable.)"""
+    overall_max = max((f["observation.tactile"].max() for f in frames),
+                      default=0.0)
+    active_taxels = sum(
+        1 for f in frames
+        if (f["observation.tactile"] > 0.1).any()
+    )
+    ok = overall_max >= GRASP_TOUCH_MIN and active_taxels >= 5
+    print(f"TACTILE_QC overall_max={overall_max:.3f} frames_with_contact="
+          f"{active_taxels} ok={ok}", flush=True)
+    return ok
 
 
 def make_env(bddl):
@@ -79,8 +102,8 @@ def to_env_obs(obs, prompt):
         obs["robot0_gripper_qpos"],
     ]).astype(np.float32)
     return {
-        "main_images": obs["agentview_image"][None],
-        "wrist_images": obs["robot0_eye_in_hand_image"][None],
+        "main_images": get_libero_image(obs)[None],
+        "wrist_images": get_libero_wrist_image(obs)[None],
         "states": state[None],
         "task_descriptions": [prompt],
         "extra_view_images": None,
@@ -111,8 +134,12 @@ def main():
 
     bench_cls = benchmark.get_benchmark_dict()["libero_goal"]
     bench = bench_cls(task_order_index=0)
-    bddl = bench.get_task_bddl_file_path(0)
-    init_states = bench.get_task_init_states(0)  # same init pool as the eval
+    TASK_IDX = 9  # put_the_wine_bottle_on_the_rack (same task the 93.75% eval used)
+    bddl = bench.get_task_bddl_file_path(TASK_IDX)
+    init_states = bench.get_task_init_states(TASK_IDX)  # same init pool as the eval
+    task = bench.get_task(TASK_IDX)
+    prompt = task.language if hasattr(task, "language") else str(task)
+    print("TASK PROMPT:", repr(prompt), "| bddl:", bddl.split("/")[-1], flush=True)
     check = lambda e: (e.check_success() if hasattr(e, "check_success")
                        else e._check_success())
 
@@ -130,12 +157,14 @@ def main():
     })
 
     env = make_env(bddl)  # ONE env for the whole run: no context churn
-    reader = TactileReader(env.sim)
 
     n_saved, n_fail, ep = 0, 0, 0
     while n_saved < args.n_demos and ep < args.n_demos * 6:
         env.seed(args.seed + ep)
         obs = env.reset()
+        # sensor addresses change across resets (bindings rebuild) —
+        # always re-resolve after reset
+        reader = TactileReader(env.sim)
         # inject the benchmark init state (same distribution the PPO policy
         # was evaluated on) + replicate the eval's settling: 15 zero-action
         # steps with the gripper forced OPEN (rlinf libero_env.reset does this)
@@ -154,7 +183,7 @@ def main():
         steps = 0
         done = False
         while not done and steps < 320:
-            env_obs = to_env_obs(obs, PROMPT)
+            env_obs = to_env_obs(obs, prompt)
             with torch.no_grad():
                 actions, _ = model.predict_action_batch(env_obs=env_obs, mode="eval")
             chunk = np.asarray(actions.detach().cpu().numpy())
@@ -165,13 +194,13 @@ def main():
                 ft = reader.wrist_ft(env.sim).copy()
                 state8 = env_obs["states"][0]
                 frames.append({
-                    "image": obs["agentview_image"].copy(),
-                    "wrist_image": obs["robot0_eye_in_hand_image"].copy(),
+                    "image": get_libero_image(obs).copy(),
+                    "wrist_image": get_libero_wrist_image(obs).copy(),
                     "state": state8,
                     "action": a.copy(),
                     "observation.tactile": tactile,
                     "observation.wrist_ft": ft,
-                    "task": PROMPT,
+                    "task": prompt,
                 })
                 obs, _, _, _ = env.step(a)
                 steps += 1
@@ -183,6 +212,8 @@ def main():
         if ok and tactile_event_ok(frames):
             n_saved += 1
             for f in frames:
+                f = {k: (v.astype(np.float32) if getattr(v, "dtype", None) == np.float64 else v)
+                     for k, v in f.items()}
                 ds.add_frame(f)
             ds.save_episode()
             print(f"[{n_saved}/{args.n_demos}] saved ({len(frames)} steps)",

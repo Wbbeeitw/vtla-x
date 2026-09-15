@@ -38,27 +38,46 @@ def _gripper_xml_path() -> Path:
 
 
 def _finger_sites(finger_key: str):
-    """30 sites over the finger pad box (half extents 0.008 x 0.004 x 0.008,
-    pad faces +-y). Sites are slightly oversized boxes so MuJoCo touch
-    sensors capture contact points on the pad surface."""
+    """30 sites per finger on the pad's INNER face (the face that grips).
+
+    Pad collision geom (tip-body frame, from panda_gripper.xml):
+      finger1 tip sits at +y; pad volume y∈[-0.009,-0.001] -> the face
+      toward the grip center is y=-0.009 (NOT -0.001; that's the outer side)
+      finger2 mirrored: inner face y=+0.009
+    Sites sit slightly PROUD of the inner face so contact points (which lie
+    on/just outside the surface plane) fall inside a site volume.
+    Grid: 2 columns (x) x 15 rows (z) per finger."""
+    sign = -1.0 if finger_key == "f0" else 1.0
+    y_face = sign * 0.0095  # inner face of the pad, 0.5mm proud
     sites = []
     for i in range(N_SITES_PER_FINGER):
-        row, col = divmod(i, 15)  # 2 rows (y) x 15 cols (z)
-        y = -0.002 + row * 0.004
-        z = -0.007 + col * 0.001
+        col_x, row_z = divmod(i, 15)  # 2 cols (x) x 15 rows (z)
+        x = (-0.004 + col_x * 0.008)
+        z = (-0.022 + row_z * 0.001)
         sites.append(
-            f'        <site name="touch_{finger_key}_s{i:02d}" pos="0 {y:.4f} {z:.4f}" '
-            f'size="0.0015 0.0015 0.0007" rgba="1 0 1 0.2" type="box" group="1"/>'
+            f'        <site name="touch_{finger_key}_s{i:02d}" '
+            f'pos="{x:.4f} {y_face:.4f} {z:.4f}" '
+            f'size="0.0035 0.0015 0.0006" rgba="1 0 1 0.2" type="box" group="1"/>'
         )
     return "\n".join(sites)
 
 
+def _strip_previous(xml: str) -> str:
+    """Remove any prior touch-site/sensor injections so we can re-patch
+    with fresh geometry (the container XML is patched in place)."""
+    lines = [ln for ln in xml.splitlines()
+             if "touch_f0_s" not in ln and "touch_f1_s" not in ln
+             and MARKER not in ln]
+    xml = "\n".join(lines)
+    if xml and not xml.endswith("\n"):
+        xml += "\n"
+    return xml
+
+
 def apply_touch_patch(xml_path: Path | None = None) -> Path:
-    """Idempotently inject touch sites + sensors into the panda gripper XML."""
+    """Inject touch sites + sensors into the panda gripper XML (re-patchable)."""
     p = Path(xml_path) if xml_path else _gripper_xml_path()
-    xml = p.read_text()
-    if MARKER in xml:
-        return p
+    xml = _strip_previous(p.read_text())
 
     # 60 sites: inserted right after each finger pad tip-body opening tag
     for finger_key, body in FINGERS.items():
