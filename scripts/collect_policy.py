@@ -1,8 +1,8 @@
 """PPO policy-driven demo collector for the wine-rack task with tactile channels.
 
-Uses the raw robosuite env (OffScreenRenderEnv) directly + the RLinf model
-wrapper (get_model -> predict_action_batch), replicating rlinf's libero_env
-obs assembly (state = eef_pos + axisangle(eef_quat) + gripper_qpos = 8d).
+v2: single persistent env for the whole run (one EGL context, no per-episode
+churn — the earlier per-episode recreate/free corrupted subsequent renders),
+model moved to CUDA explicitly (standalone runs lack rlinf's device hook).
 
 Usage:
   python scripts/collect_policy.py --n-demos 2     # trial
@@ -65,17 +65,17 @@ def build_model(config_dir, config_name):
     return model
 
 
-def to_env_obs(obs, prompt):
+def to_env_obs(obs, prompt, device):
     state = np.concatenate([
         obs["robot0_eef_pos"],
         quat2axisangle(obs["robot0_eef_quat"]),
         obs["robot0_gripper_qpos"],
     ]).astype(np.float32)
     return {
-        "main_images": [obs["agentview_image"]],
-        "wrist_images": [obs["robot0_eye_in_hand_image"]],
-        "states": state[None],
-        "actions": np.zeros((1, 7), np.float32),  # placeholder; replaced by flow noise
+        "main_images": [torch.from_numpy(obs["agentview_image"]).to(device)],
+        "wrist_images": [torch.from_numpy(obs["robot0_eye_in_hand_image"]).to(device)],
+        "states": torch.from_numpy(state[None]).to(device),
+        "actions": torch.zeros(1, 7).to(device),  # placeholder; replaced by flow noise
         "task_descriptions": [prompt],
         "extra_view_images": None,
     }
@@ -88,7 +88,7 @@ def check_success(env):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--n-demos", type=int, default=50)
+    ap.add_argument("--n-demos", type=int, default=2)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--out", type=str, default="wine_rack_tactile")
     ap.add_argument("--config-dir", type=str,
@@ -101,11 +101,13 @@ def main():
     np.random.seed(args.seed)
 
     model = build_model(args.config_dir, args.config_name)
+    device = next(model.parameters()).device
 
     bench_cls = benchmark.get_benchmark_dict()["libero_goal"]
     bench = bench_cls(task_order_index=0)
     bddl = bench.get_task_bddl_file_path(0)
-    init_states = bench.get_task_init_states(0)
+    check = lambda e: (e.check_success() if hasattr(e, "check_success")
+                       else e._check_success())
 
     ds = LeRobotDataset.create(args.out, fps=20, features={
         "image": {"dtype": "video", "shape": (256, 256, 3),
@@ -120,10 +122,11 @@ def main():
                                  "names": ["ft"]},
     })
 
+    env = make_env(bddl)  # ONE env for the whole run: no context churn
+    reader = TactileReader(env.sim)
+
     n_saved, n_fail, ep = 0, 0, 0
     while n_saved < args.n_demos and ep < args.n_demos * 6:
-        env = make_env(bddl)
-        reader = TactileReader(env.sim)
         env.seed(args.seed + ep)
         obs = env.reset()
 
@@ -131,24 +134,22 @@ def main():
         steps = 0
         done = False
         while not done and steps < 320:
-            env_obs = to_env_obs(obs, PROMPT)
+            env_obs = to_env_obs(obs, PROMPT, device)
             with torch.no_grad():
-                actions, _ = model.predict_action_batch(env_obs=env_obs,
-                                                        mode="eval")
-            chunk = actions.detach().cpu().numpy()
+                actions, _ = model.predict_action_batch(env_obs=env_obs, mode="eval")
+            chunk = np.asarray(actions.detach().cpu().numpy())
             if chunk.ndim == 3:
                 chunk = chunk[0]
             for a in chunk:
-                env_obs = to_env_obs(obs, PROMPT)
-                tactile = reader.tactile(env.sim)
-                ft = reader.wrist_ft(env.sim)
+                tactile = reader.tactile(env.sim).copy()
+                ft = reader.wrist_ft(env.sim).copy()
                 frames.append({
                     "image": obs["agentview_image"].copy(),
                     "wrist_image": obs["robot0_eye_in_hand_image"].copy(),
-                    "state": env_obs["states"][0],
+                    "state": env_obs["states"][0].cpu().numpy(),
                     "action": a.copy(),
-                    "observation.tactile": tactile.copy(),
-                    "observation.wrist_ft": ft.copy(),
+                    "observation.tactile": tactile,
+                    "observation.wrist_ft": ft,
                     "task": PROMPT,
                 })
                 obs, _, _, _ = env.step(a)
@@ -156,7 +157,6 @@ def main():
                 if check_success(env):
                     done = True
                     break
-        env.close()
 
         ok = done and steps < 320  # early termination = success
         if ok and tactile_event_ok(frames):
