@@ -16,7 +16,7 @@ import torch
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 
 REPO = "wine_rack_tactile"
-ROOT = "/data_vtlax/datasets"
+ROOT = "/data_vtlax/datasets/wine_rack_tactile"  # explicit root = dataset dir itself (no repo_id subdir when root is passed)
 OUT_DIR = "/data_vtlax/results/audit"
 PROMPT_EXPECT = "put the wine bottle on the rack"
 FPS = 20
@@ -30,30 +30,38 @@ total_frames = meta.total_frames
 fps = meta.fps
 print(f"dataset: {n_ep} episodes, {total_frames} frames, fps={fps}", flush=True)
 
-# group frames per episode from meta
-episodes_meta = meta.episodes  # list of dicts with episode_index/length/tasks
-bounds = []
-start = 0
-for em in episodes_meta:
-    bounds.append((em.get("episode_index", len(bounds)), start, em.get("length", 0)))
-    start += em.get("length", 0)
-
 report_eps = []
 all_tactile_max = []
 all_taxel_active = np.zeros(60, dtype=int)
 all_len = []
 fail_rows = []
 
-for (ep_idx, f0, length) in bounds:
-    if length == 0:
-        continue
-    seg = ds[f0:f0 + length]
-    rec = {"episode_index": int(ep_idx), "frames": int(length)}
+# group all frames by episode_index while streaming
+by_ep = {}
+order = []
+for i in range(total_frames):
+    item = ds[i]
+    e = int(item["episode_index"])
+    if e not in by_ep:
+        by_ep[e] = {"tac": [], "ft": [], "st": [], "act": [], "img": []}
+        order.append(e)
+    by_ep[e]["tac"].append(item["observation.tactile"].numpy())
+    by_ep[e]["ft"].append(item["observation.wrist_ft"].numpy())
+    by_ep[e]["st"].append(item["state"].numpy())
+    by_ep[e]["act"].append(item["action"].numpy())
+    by_ep[e]["img"].append(item["image"].numpy())
+    if (i + 1) % 500 == 0:
+        print(f"  streamed {i+1}/{total_frames} frames", flush=True)
+
+report_eps = []
+for ep_key in order:
+    d = by_ep[ep_key]
+    length = len(d["tac"])
+    rec = {"episode_index": int(ep_key), "frames": int(length)}
 
     # ---- tactile ----
-    tac = seg["observation.tactile"].numpy() if torch.is_tensor(seg["observation.tactile"]) \
-        else np.asarray(seg["observation.tactile"])
-    tac = np.asarray(tac, dtype=np.float64).reshape(length, -1)
+    tac = np.asarray(d["tac"], dtype=np.float64).reshape(length, -1)
+    # ---- tactile ----
     rec["tactile_max"] = float(tac.max())
     rec["tactile_mean"] = float(tac.mean())
     active = (tac.max(axis=0) > 0.1)
@@ -65,19 +73,14 @@ for (ep_idx, f0, length) in bounds:
     all_taxel_active += active.astype(int)
 
     # ---- ft ----
-    ft = np.asarray(seg["observation.wrist_ft"], dtype=np.float64).reshape(length, 6)
+    # ft already stacked above
     ft_norm = np.linalg.norm(ft[:, :3], axis=1)
     rec["ft_norm_min"] = float(ft_norm.min())
     rec["ft_norm_max"] = float(ft_norm.max())
     rec["ft_norm_mean"] = float(ft_norm.mean())
 
     # ---- images (subsample 8 frames) ----
-    img = seg["image"]
-    if torch.is_tensor(img):
-        img = img.numpy()
-    img = np.asarray(img)
-    if img.ndim == 4 and img.shape[1] in (1, 3):  # CHW
-        img = img.transpose(0, 2, 3, 1)
+
     idxs = np.linspace(0, length - 1, min(8, length)).astype(int)
     stds, diffs, darks = [], [0.0], []
     prev = None
@@ -94,8 +97,8 @@ for (ep_idx, f0, length) in bounds:
     rec["img_dark_min"] = min(darks)
 
     # ---- state / action physics ----
-    st = np.asarray(seg["state"], dtype=np.float64).reshape(length, -1)
-    act = np.asarray(seg["action"], dtype=np.float64).reshape(length, -1)
+    st = np.asarray(st_l, dtype=np.float64).reshape(length, -1)
+    act = np.asarray(act_l, dtype=np.float64).reshape(length, -1)
     rec["state_nan"] = bool(np.isnan(st).any() or np.isinf(st).any())
     if length > 1:
         d = np.abs(np.diff(st[:, :3], axis=0)).max()
