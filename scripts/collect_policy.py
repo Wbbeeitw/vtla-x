@@ -60,6 +60,7 @@ def build_model(config_dir, config_name):
         "model_path": "/data_vtlax/checkpoints/RLinf-Pi05-PPO-LIBERO-130",
     }))
     model = get_model(model_cfg)
+    model = model.to("cuda")  # standalone run: rlinf's device hook is absent
     model.eval()
     return model
 
